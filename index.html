@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>محاكي v86 - شريط المهام العلوي</title>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        /* شريط المهام العلوي (Taskbar) */
+        .taskbar {
+            background: #1e293b;
+            padding: 12px 20px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            max-width: 900px;
+            width: 100%;
+            border: 1px solid #334155;
+            margin-bottom: 30px;
+            box-sizing: border-box;
+            flex-wrap: wrap;
+        }
+
+        .taskbar-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .taskbar-group label {
+            font-size: 13px;
+            color: #94a3b8;
+            white-space: nowrap;
+        }
+
+        .taskbar-group input[type="file"] {
+            width: 100%;
+            padding: 6px;
+            background: #0f172a;
+            border: 1px solid #475569;
+            color: #cbd5e1;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        /* مجموعة الأزرار بشكل أفقي في الشريط */
+        .taskbar-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        button {
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 6px;
+            border: none;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .btn-start { background-color: #10b981; color: white; }
+        .btn-start:hover { background-color: #059669; }
+
+        .btn-stop { background-color: #ef4444; color: white; }
+        .btn-stop:hover { background-color: #dc2626; }
+
+        .btn-fullscreen { background-color: #3b82f6; color: white; }
+        .btn-fullscreen:hover { background-color: #2563eb; }
+
+        /* حاوية الشاشة في الأسفل وفي المنتصف تماماً */
+        #screen_wrapper {
+            display: inline-block;
+            background-color: #000;
+            border-radius: 8px;
+            padding: 4px;
+            border: 2px solid #334155;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        #screen_container {
+            min-height: 400px;
+            min-width: 640px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #64748b;
+            font-family: monospace;
+        }
+
+        #screen_container canvas {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* دعم ملء الشاشة */
+        #screen_wrapper:fullscreen {
+            width: 100vw;
+            height: 100vh;
+            padding: 0;
+            border: none;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #screen_wrapper:fullscreen #screen_container {
+            width: 100%;
+            height: 100%;
+        }
+
+        #screen_wrapper:fullscreen canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- شريط المهام والأزرار في أعلى الصفحة بشكل أفقي -->
+    <div class="taskbar">
+        <div class="taskbar-group">
+            <label for="iso_file">ISO:</label>
+            <input type="file" id="iso_file" accept=".iso">
+        </div>
+        <div class="taskbar-group">
+            <label for="hda_file">Hard Disk:</label>
+            <input type="file" id="hda_file" accept=".img,.bin,.dsk">
+        </div>
+        
+        <div class="taskbar-buttons">
+            <button id="start_btn" class="btn-start">تشغيل</button>
+            <button id="stop_btn" class="btn-stop" disabled>إيقاف</button>
+            <button id="fullscreen_btn" class="btn-fullscreen" disabled>ملء الشاشة</button>
+        </div>
+    </div>
+
+    <!-- شاشة المحاكي في الأسفل وفي المنتصف -->
+    <div id="screen_wrapper">
+        <div id="screen_container">
+            قم بتحديد الملفات من شريط المهام بالأعلى واضغط على "تشغيل" للبدء
+        </div>
+    </div>
+
+    <script src="libv86.js"></script>
+    <script>
+        let emulator = null;
+
+        const startBtn = document.getElementById("start_btn");
+        const stopBtn = document.getElementById("stop_btn");
+        const fullscreenBtn = document.getElementById("fullscreen_btn");
+        const container = document.getElementById("screen_container");
+        const wrapper = document.getElementById("screen_wrapper");
+
+        startBtn.addEventListener("click", function() {
+            const isoInput = document.getElementById("iso_file").files[0];
+            const hdaInput = document.getElementById("hda_file").files[0];
+
+            if (emulator) {
+                emulator.destroy();
+            }
+
+            container.innerHTML = "";
+
+            let config = {
+                wasm_path: "v86.wasm",
+                screen_container: container,
+                bios: { url: "seabios.bin" },
+                vga_bios: { url: "vgabios.bin" },
+                autostart: true,
+                memory_size: 128 * 1024 * 1024,
+                vga_memory_size: 8 * 1024 * 1024,
+            };
+
+            if (isoInput) {
+                config.cdrom = { url: URL.createObjectURL(isoInput) };
+            }
+
+            if (hdaInput) {
+                config.hda = { url: URL.createObjectURL(hdaInput) };
+            }
+
+            try {
+                emulator = new V86(config);
+                stopBtn.disabled = false;
+                fullscreenBtn.disabled = false;
+            } catch (error) {
+                console.error("خطأ أثناء التشغيل:", error);
+                alert("حدث خطأ أثناء تشغيل المحاكي.");
+            }
+        });
+
+        stopBtn.addEventListener("click", function() {
+            if (emulator) {
+                emulator.destroy();
+                emulator = null;
+            }
+            container.innerHTML = "تم إيقاف المحاكي. حدد الملفات وأعد التشغيل.";
+            stopBtn.disabled = true;
+            fullscreenBtn.disabled = true;
+        });
+
+        fullscreenBtn.addEventListener("click", function() {
+            if (wrapper.requestFullscreen) {
+                wrapper.requestFullscreen();
+            } else if (wrapper.webkitRequestFullscreen) {
+                wrapper.webkitRequestFullscreen();
+            } else if (wrapper.msRequestFullscreen) {
+                wrapper.msRequestFullscreen();
+            }
+        });
+
+        document.addEventListener("fullscreenchange", function() {
+            if (!document.fullscreenElement) {
+                const canvas = container.querySelector("canvas");
+                if (canvas) {
+                    canvas.style.width = "";
+                    canvas.style.height = "";
+                }
+            }
+        });
+    </script>
+
+</body>
+</html>
